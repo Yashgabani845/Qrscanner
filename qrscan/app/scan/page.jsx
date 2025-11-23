@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useState } from "react"
 import { BrowserMultiFormatReader } from "@zxing/browser"
-import { DecodeHintType, BarcodeFormat } from "@zxing/library"
+
 
 export default function QRScanner() {
   const videoRef = useRef(null)
@@ -27,19 +27,22 @@ export default function QRScanner() {
 
         const backCam = devices.find((d) => d.label.toLowerCase().includes("back"))?.deviceId || devices[0].deviceId
 
-       const hints = new Map();
+        const hints = new Map()
+        hints.set("possibleFormats", ["QR_CODE"])
+        hints.set("tryHarder", true)
+        hints.set("alsoInverted", true)
 
-// Allowed barcode formats
-hints.set(DecodeHintType.POSSIBLE_FORMATS, [
-  BarcodeFormat.CODE_128,
-  BarcodeFormat.QR_CODE
-]);
+        const reader = new BrowserMultiFormatReader(hints)
 
-// Additional optimization
-hints.set(DecodeHintType.TRY_HARDER, true);
-hints.set(DecodeHintType.ALSO_INVERTED, true);
 
-const reader = new BrowserMultiFormatReader(hints);
+
+
+
+
+
+
+
+
         readerInstance.current = reader
 
         setScanning(true)
