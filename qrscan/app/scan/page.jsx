@@ -1,104 +1,145 @@
-"use client";
+"use client"
 
-import { useEffect, useRef, useState } from "react";
-import { BrowserMultiFormatReader } from "@zxing/browser";
+import { useEffect, useRef, useState } from "react"
+import { BrowserMultiFormatReader } from "@zxing/browser"
 
 export default function QRScanner() {
-  const videoRef = useRef(null);
-  const [result, setResult] = useState("");
-  const [error, setError] = useState("");
-  const [loading, setLoading] = useState(false);
-  const [scanning, setScanning] = useState(false);
+  const videoRef = useRef(null)
+  const canvasRef = useRef(null)
+  const readerInstance = useRef(null)
+  const [result, setResult] = useState("")
+  const [error, setError] = useState("")
+  const [loading, setLoading] = useState(false)
+  const [scanning, setScanning] = useState(false)
 
   useEffect(() => {
-    const reader = new BrowserMultiFormatReader();
-    let stopScanner = false;
+    let stopScanner = false
 
     async function start() {
-      setError("");
-      setResult("");
-      setLoading(true);
+      setError("")
+      setResult("")
+      setLoading(true)
 
       try {
-        const devices = await BrowserMultiFormatReader.listVideoInputDevices();
-        if (!devices.length) throw new Error("No camera found");
+        const devices = await BrowserMultiFormatReader.listVideoInputDevices()
+        if (!devices.length) throw new Error("No camera found")
 
-        const backCam =
-          devices.find((d) => d.label.toLowerCase().includes("back"))?.deviceId ||
-          devices[0].deviceId;
+        const backCam = devices.find((d) => d.label.toLowerCase().includes("back"))?.deviceId || devices[0].deviceId
 
-        setScanning(true);
+        const hints = new Map()
+        hints.set("possibleFormats", ["QR_CODE"])
+        hints.set("tryHarder", true)
+        hints.set("alsoInverted", true)
 
-        reader.decodeFromVideoDevice(
-          backCam,
-          videoRef.current,
-          (res, err) => {
-            if (stopScanner) return;
-            if (res) {
-              setResult(res.getText());
-              stopScannerFn();
-            }
+        const reader = new BrowserMultiFormatReader(hints)
+        readerInstance.current = reader
+
+        setScanning(true)
+
+        const video = videoRef.current
+        reader.decodeFromVideoDevice(backCam, video, (res, err) => {
+          if (stopScanner) return
+          if (res) {
+            setResult(res.getText())
+            stopScannerFn()
           }
-        );
+        })
+
+        const scanInterval = setInterval(() => {
+          if (stopScanner || !video || !canvasRef.current) return
+
+          const canvas = canvasRef.current
+          const ctx = canvas.getContext("2d")
+          if (!ctx) return
+
+          try {
+            canvas.width = video.videoWidth
+            canvas.height = video.videoHeight
+
+            // Draw original frame
+            ctx.drawImage(video, 0, 0)
+
+            // Try scanning rotated versions for better angle detection
+            const angles = [0, 90, 180, 270]
+            angles.forEach((angle) => {
+              if (stopScanner) return
+
+              ctx.save()
+              ctx.translate(canvas.width / 2, canvas.height / 2)
+              ctx.rotate((angle * Math.PI) / 180)
+              ctx.drawImage(video, -canvas.width / 2, -canvas.height / 2)
+              ctx.restore()
+
+              const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height)
+              reader.decodeBitmap(imageData).then((decodeResult) => {
+                if (decodeResult && !stopScanner) {
+                  setResult(decodeResult.getText())
+                  stopScannerFn()
+                }
+              })
+            })
+          } catch (e) {
+            // Silently continue scanning on canvas errors
+          }
+        }, 500)
+
+        return () => {
+          clearInterval(scanInterval)
+        }
       } catch (e) {
-        setError(e.message);
-        setScanning(false);
+        setError(e.message)
+        setScanning(false)
       } finally {
-        setLoading(false);
+        setLoading(false)
       }
     }
 
-    start();
+    start()
 
     const stopScannerFn = () => {
-      stopScanner = true;
-      setScanning(false);
-      reader.reset();
-    };
+      stopScanner = true
+      setScanning(false)
+      if (readerInstance.current) {
+        readerInstance.current.reset()
+      }
+    }
 
     return () => {
-      stopScannerFn();
-    };
-  }, []);
+      stopScannerFn()
+    }
+  }, [])
 
   const resetScanner = () => {
-    setResult("");
-    setError("");
-    setScanning(false);
-    setLoading(false);
-    // reload page to restart scanner
-    window.location.reload();
-  };
+    setResult("")
+    setError("")
+    setScanning(false)
+    setLoading(false)
+    window.location.reload()
+  }
 
   return (
-    <div className="flex flex-col items-center justify-center min-h-screen bg-gradient-to-br from-blue-50 via-purple-50 to-pink-50 p-4">
-      <div className="w-full max-w-md bg-white rounded-3xl shadow-xl overflow-hidden">
-        <div className="bg-gradient-to-r from-blue-600 to-purple-600 p-6 text-white text-center">
-          <h1 className="text-2xl font-bold">QR Scanner</h1>
-          {loading && <p className="text-sm mt-1 opacity-80">Loading camera...</p>}
+    <div className="flex flex-col items-center justify-center min-h-screen bg-slate-50 p-3 sm:p-4">
+      <div className="w-full max-w-2xl bg-white rounded-2xl shadow-lg overflow-hidden border border-slate-200">
+        <div className="bg-indigo-600 p-4 sm:p-6 text-white text-center">
+          <h1 className="text-xl sm:text-2xl font-bold">QR Code Scanner</h1>
+          {loading && <p className="text-xs sm:text-sm mt-2 opacity-90">Initializing camera...</p>}
         </div>
 
-        <div className="p-4">
-          {/* Video Preview */}
-          <div className="relative rounded-2xl overflow-hidden bg-black w-full aspect-video">
-            <video
-              ref={videoRef}
-              className="w-full h-full object-cover"
-              muted
-              autoPlay
-              playsInline
-            ></video>
+        <div className="p-3 sm:p-6">
+          <div className="relative rounded-xl overflow-hidden bg-black w-full aspect-square sm:aspect-video max-w-full">
+            <video ref={videoRef} className="w-full h-full object-cover" muted autoPlay playsInline></video>
+            <canvas ref={canvasRef} className="hidden"></canvas>
 
-            {/* Overlay scanning box */}
             {scanning && !result && (
               <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
-                <div className="w-64 h-64 border-4 border-white rounded-xl relative">
-                  <div className="absolute top-0 left-0 w-8 h-8 border-t-4 border-l-4 border-green-400"></div>
-                  <div className="absolute top-0 right-0 w-8 h-8 border-t-4 border-r-4 border-green-400"></div>
-                  <div className="absolute bottom-0 left-0 w-8 h-8 border-b-4 border-l-4 border-green-400"></div>
-                  <div className="absolute bottom-0 right-0 w-8 h-8 border-b-4 border-r-4 border-green-400"></div>
+                <div className="w-56 h-56 sm:w-80 sm:h-80 border-4 border-white rounded-lg relative shadow-lg">
+                  <div className="absolute top-0 left-0 w-6 h-6 sm:w-8 sm:h-8 border-t-4 border-l-4 border-cyan-400"></div>
+                  <div className="absolute top-0 right-0 w-6 h-6 sm:w-8 sm:h-8 border-t-4 border-r-4 border-cyan-400"></div>
+                  <div className="absolute bottom-0 left-0 w-6 h-6 sm:w-8 sm:h-8 border-b-4 border-l-4 border-cyan-400"></div>
+                  <div className="absolute bottom-0 right-0 w-6 h-6 sm:w-8 sm:h-8 border-b-4 border-r-4 border-cyan-400"></div>
                   <div
-                    className="absolute w-full h-1 bg-green-400 shadow-lg animate-[scan_2s_ease-in-out_infinite]"
+                    className="absolute w-full h-1 bg-gradient-to-r from-transparent via-cyan-400 to-transparent shadow-lg animate-[scan_2s_ease-in-out_infinite]"
+                    style={{ top: "50%" }}
                   ></div>
                 </div>
               </div>
@@ -106,31 +147,32 @@ export default function QRScanner() {
 
             {!scanning && !result && !loading && (
               <div className="absolute inset-0 flex items-center justify-center text-white">
-                <p className="bg-black bg-opacity-60 px-4 py-2 rounded-lg">
-                  Waiting for camera...
+                <p className="bg-black bg-opacity-70 px-4 py-2 rounded-lg text-sm sm:text-base text-center">
+                  Position QR code in frame (any angle)
                 </p>
               </div>
             )}
           </div>
 
-          {/* Scanned Result */}
           {result && (
-            <div className="mt-4 bg-green-100 p-4 rounded-xl text-center">
-              <p className="font-semibold text-green-700 mb-2">Scanned Result:</p>
-              <p className="break-words">{result}</p>
+            <div className="mt-4 sm:mt-6 bg-emerald-50 p-4 sm:p-6 rounded-xl text-center border border-emerald-200">
+              <p className="font-semibold text-emerald-700 text-sm sm:text-base mb-3">Scanned Successfully:</p>
+              <p className="break-words text-emerald-900 text-xs sm:text-sm bg-white p-3 rounded-lg border border-emerald-100">
+                {result}
+              </p>
               <button
                 onClick={resetScanner}
-                className="mt-4 w-full bg-purple-600 text-white py-3 rounded-xl font-semibold hover:bg-purple-700 transition"
+                className="mt-4 w-full bg-indigo-600 text-white py-2 sm:py-3 rounded-lg font-semibold hover:bg-indigo-700 transition text-sm sm:text-base"
               >
-                Scan Again
+                Scan Another Code
               </button>
             </div>
           )}
 
-          {/* Error */}
           {error && (
-            <div className="mt-4 bg-red-50 border border-red-300 rounded-xl p-3 text-red-700 text-center">
-              {error}
+            <div className="mt-4 sm:mt-6 bg-red-50 border-2 border-red-200 rounded-lg p-3 sm:p-4 text-red-700 text-center text-xs sm:text-sm">
+              <p className="font-semibold mb-1">Error</p>
+              <p>{error}</p>
             </div>
           )}
         </div>
@@ -147,5 +189,5 @@ export default function QRScanner() {
         }
       `}</style>
     </div>
-  );
+  )
 }
